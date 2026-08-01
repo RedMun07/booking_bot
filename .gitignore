@@ -1,0 +1,16 @@
+# База данных SQLite
+studio.db
+
+# Временные файлы Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Файлы окружения
+.env
+.venv/
+venv/
+
+# Логи
+log.txt
+*.log
