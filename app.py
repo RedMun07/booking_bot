@@ -6,6 +6,7 @@ import csv
 import io
 from datetime import datetime, timedelta
 import aiohttp
+import os
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command, StateFilter
