@@ -1,5 +1,6 @@
 # База данных SQLite
 studio.db
+*.db
 
 # Временные файлы Python
 __pycache__/
@@ -14,3 +15,11 @@ venv/
 # Логи
 log.txt
 *.log
+
+# IDE
+.idea/
+.vscode/
+
+# Артефакты тестов и экспорта
+_test_tmp/
+*.csv

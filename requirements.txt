@@ -1,3 +1,2 @@
-aiogram
-aiohttp
-flask
+aiogram>=3.13,<4
+aiohttp>=3.9,<4
