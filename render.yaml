@@ -1,0 +1,25 @@
+# Render Blueprint — деплой бота как Background Worker.
+# Документация: https://render.com/docs/blueprint-spec
+services:
+  - type: worker
+    name: booking-bot
+    runtime: python
+    plan: starter            # воркеры на Render платные, бесплатного тарифа для них нет
+    region: frankfurt        # ближайший к РФ регион
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python -u app.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false          # значение вводится в дашборде, в репозиторий не попадает
+      - key: ADMIN_ID
+        sync: false
+      - key: DB_PATH
+        value: /var/data/studio.db
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+    disk:
+      name: booking-data
+      mountPath: /var/data   # без диска SQLite обнулится при каждом деплое
+      sizeGB: 1
