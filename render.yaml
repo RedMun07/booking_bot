@@ -1,23 +1,16 @@
-# Render Blueprint — бесплатный Web Service с health-check.
-# Почему web, а не worker: воркеры на Render платные, а free-план есть только у web.
-# Бот слушает PORT, отвечает на /health и сам себя пингует, чтобы не засыпать.
 services:
   - type: web
     name: booking-bot
     runtime: python
     plan: free
-    region: frankfurt            # ближайший к РФ регион
-    branch: main
-    autoDeploy: true
-    healthCheckPath: /health
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
     startCommand: python -u app.py
+    healthCheckPath: /health
     envVars:
       - key: BOT_TOKEN
-        sync: false              # вводится в дашборде, в репозиторий не попадает
+        sync: false
       - key: ADMIN_ID
         sync: false
       - key: DB_PATH
-        value: studio.db         # на free-плане диск не сохраняется — база обнуляется при деплое
-      - key: PYTHON_VERSION
-        value: "3.12.6"
+        value: studio.db
