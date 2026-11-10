@@ -1,25 +1,23 @@
-# Render Blueprint — деплой бота как Background Worker.
-# Документация: https://render.com/docs/blueprint-spec
+# Render Blueprint — бесплатный Web Service с health-check.
+# Почему web, а не worker: воркеры на Render платные, а free-план есть только у web.
+# Бот слушает PORT, отвечает на /health и сам себя пингует, чтобы не засыпать.
 services:
-  - type: worker
+  - type: web
     name: booking-bot
     runtime: python
-    plan: starter            # воркеры на Render платные, бесплатного тарифа для них нет
-    region: frankfurt        # ближайший к РФ регион
+    plan: free
+    region: frankfurt            # ближайший к РФ регион
     branch: main
     autoDeploy: true
+    healthCheckPath: /health
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: python -u app.py
     envVars:
       - key: BOT_TOKEN
-        sync: false          # значение вводится в дашборде, в репозиторий не попадает
+        sync: false              # вводится в дашборде, в репозиторий не попадает
       - key: ADMIN_ID
         sync: false
       - key: DB_PATH
-        value: /var/data/studio.db
+        value: studio.db         # на free-плане диск не сохраняется — база обнуляется при деплое
       - key: PYTHON_VERSION
         value: "3.12.6"
-    disk:
-      name: booking-data
-      mountPath: /var/data   # без диска SQLite обнулится при каждом деплое
-      sizeGB: 1

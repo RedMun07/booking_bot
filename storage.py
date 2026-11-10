@@ -111,7 +111,7 @@ def get_booked_slots_for_date(date_str: str) -> list[sqlite3.Row]:
         )
 
 
-def book_slot(date_str: str, hour: int, name: str, phone: str) -> str | None:
+def book_slot(date_str: str, hour: int, name: str, phone: str | None = None) -> str | None:
     """Атомарно занимает слот. Возвращает код отмены или None, если занято."""
     for _ in range(5):
         code = generate_booking_code()
@@ -183,3 +183,4 @@ def free_hours(date_str: str, now: datetime | None = None) -> list[int]:
     if date_str == now.date().isoformat():
         hours = [h for h in hours if h > now.hour]
     return hours
+

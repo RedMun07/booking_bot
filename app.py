@@ -14,6 +14,8 @@ import os
 import sys
 from datetime import datetime, timedelta
 
+import aiohttp
+from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -123,8 +125,6 @@ def get_main_keyboard(user_id: int) -> ReplyKeyboardMarkup:
 class BookingForm(StatesGroup):
     choosing_date = State()
     choosing_slot = State()
-    entering_name = State()
-    entering_phone = State()
 
 
 class CancelForm(StatesGroup):
@@ -153,10 +153,11 @@ def format_booked_slots(date_str: str, booked_slots) -> str:
         lines.append("  Нет занятых слотов.")
         return "\n".join(lines)
     for row in booked_slots:
+        contact = f", тел: {esc(row['phone'])}" if row["phone"] else ""
         lines.append(
             f"  • {row['hour']:02d}:00-{row['hour'] + 1:02d}:00 — "
-            f"<b>{esc(row['booked_by'])}</b> (тел: {esc(row['phone'])}, "
-            f"код: <code>{esc(row['booking_code'])}</code>)"
+            f"<b>{esc(row['booked_by'])}</b>{contact} "
+            f"(код: <code>{esc(row['booking_code'])}</code>)"
         )
     return "\n".join(lines)
 
@@ -375,73 +376,37 @@ async def process_slot(callback: types.CallbackQuery, state: FSMContext):
     except (IndexError, ValueError):
         await callback.answer("Некорректные данные", show_alert=True)
         return
-    await state.update_data(hour=hour)
-    await callback.message.edit_text("Введите ваше имя (или nickname):")
-    await state.set_state(BookingForm.entering_name)
-    await callback.answer()
-
-
-@dp.message(StateFilter(BookingForm.entering_name))
-async def process_name(message: types.Message, state: FSMContext):
-    if not message.text:
-        await message.answer("Пожалуйста, отправьте имя текстом.")
-        return
-    name = message.text.strip()
-    if not name:
-        await message.answer("Имя не может быть пустым. Введите имя:",
-                             reply_markup=get_main_keyboard(message.from_user.id))
-        return
-    if len(name) > 100:
-        await message.answer("Слишком длинное имя (максимум 100 символов).")
-        return
-    await state.update_data(name=name)
-    await message.answer("Введите ваш номер телефона (можно в свободном формате):")
-    await state.set_state(BookingForm.entering_phone)
-
-
-@dp.message(StateFilter(BookingForm.entering_phone))
-async def process_phone(message: types.Message, state: FSMContext):
-    if not message.text:
-        await message.answer("Пожалуйста, отправьте номер текстом.")
-        return
-    phone = message.text.strip()
-    if len(phone) != 11:
-        await message.answer("❌ Номер должен содержать ровно 11 цифр (например, 89001234567). Попробуйте ещё раз.")
-        return
-    if not phone.isdigit():
-        await message.answer("❌ Номер должен состоять только из цифр. Без пробелов, скобок и дефисов.")
-        return
-    if phone[0] != "8":
-        await message.answer("❌ Номер должен начинаться с цифры 8.")
-        return
 
     data = await state.get_data()
     date_str = data.get("date")
-    hour = data.get("hour")
-    name = data.get("name")
-    if not date_str or hour is None or not name:
-        await state.clear()
-        await message.answer("Что-то пошло не так, начните запись заново.",
-                             reply_markup=get_main_keyboard(message.from_user.id))
+    await state.clear()
+
+    if not date_str:
+        await callback.message.edit_text("Сессия устарела, начните запись заново.")
+        await callback.answer()
         return
 
-    code = storage.book_slot(date_str, hour, name, phone)
+    user = callback.from_user
+    client = ("@" + user.username) if user.username else user.full_name
+    client = client[:100]
+
+    code = storage.book_slot(date_str, hour, client, None)
     if code is None:
-        await message.answer("❌ К сожалению, этот слот уже занят. Попробуйте выбрать другой.",
-                             reply_markup=get_main_keyboard(message.from_user.id))
-        await state.clear()
+        await callback.message.edit_text(
+            "❌ Этот слот только что заняли. Попробуйте выбрать другой."
+        )
+        await callback.answer()
         return
 
-    await message.answer(
+    await callback.message.edit_text(
         "✅ Запись подтверждена!\n\n"
         f"Дата: {esc(date_str)}\n"
         f"Время: {hour:02d}:00-{hour + 1:02d}:00\n"
-        f"Имя: {esc(name)}\n"
-        f"Телефон: {esc(phone)}\n\n"
+        f"Записан: {esc(client)}\n\n"
         f"<b>Код отмены:</b> <code>{esc(code)}</code>\n"
         "Сохраните его, чтобы отменить запись.",
-        reply_markup=get_main_keyboard(message.from_user.id),
     )
+    await callback.answer("Готово")
 
     if ADMIN_ID > 0:
         try:
@@ -450,13 +415,11 @@ async def process_phone(message: types.Message, state: FSMContext):
                 "🔔 <b>Новая запись!</b>\n\n"
                 f"Дата: {esc(date_str)}\n"
                 f"Время: {hour:02d}:00-{hour + 1:02d}:00\n"
-                f"Имя: {esc(name)}\n"
-                f"Телефон: {esc(phone)}\n"
+                f"Клиент: {esc(client)}\n"
                 f"Код: <code>{esc(code)}</code>",
             )
         except Exception as e:
             log.warning("Не удалось отправить уведомление админу: %s", e)
-    await state.clear()
 
 
 # ====== ОТМЕНА ======
@@ -495,7 +458,7 @@ async def process_cancel_code(message: types.Message, state: FSMContext):
                 f"Код: <code>{esc(code)}</code>\n"
                 f"Дата: {esc(row['date'])}, "
                 f"{row['hour']:02d}:00-{row['hour'] + 1:02d}:00\n"
-                f"Клиент: {esc(row['booked_by'])}, {esc(row['phone'])}",
+                f"Клиент: {esc(row['booked_by'])}",
             )
         except Exception as e:
             log.warning("Не удалось отправить уведомление админу: %s", e)
@@ -509,17 +472,56 @@ async def any_message(message: types.Message):
 
 
 # ========== ЗАПУСК ==========
+async def _health(request):
+    return web.Response(text="ok")
+
+
+async def _keepalive(url: str) -> None:
+    """Раз в 10 минут дёргаем свой /health, чтобы Render не усыплял сервис."""
+    while True:
+        await asyncio.sleep(600)
+        try:
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                await session.get(url + "/health")
+        except Exception as e:
+            log.debug("keepalive: %s", e)
+
+
 async def main() -> None:
     storage.init_db()
     deleted = storage.clear_old_slots()
     if deleted:
         log.info("Удалено старых свободных слотов: %s", deleted)
     storage.ensure_slots_for_days()
+
+    runner = None
+    port = int(os.getenv("PORT", "0") or 0)
+    if port:
+        try:
+            application = web.Application()
+            application.router.add_get("/", _health)
+            application.router.add_get("/health", _health)
+            runner = web.AppRunner(application)
+            await runner.setup()
+            await web.TCPSite(runner, "0.0.0.0", port).start()
+            log.info("HTTP health-check слушает порт %s", port)
+        except Exception as e:
+            log.warning("Не удалось поднять HTTP-сервер: %s", e)
+            runner = None
+
+    external = os.getenv("RENDER_EXTERNAL_URL", "").strip()
+    if external:
+        asyncio.create_task(_keepalive(external))
+        log.info("Keep-alive включён: %s/health", external)
+
     log.info("Бот запущен")
     try:
         await dp.start_polling(bot, allowed_updates=["message", "callback_query"],
                                drop_pending_updates=True)
     finally:
+        if runner is not None:
+            await runner.cleanup()
         await bot.session.close()
 
 
@@ -528,4 +530,5 @@ if __name__ == "__main__":
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
         pass
+
 
