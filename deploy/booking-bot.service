@@ -1,0 +1,27 @@
+[Unit]
+Description=Booking Bot — запись в студию «Атмосфера»
+Documentation=https://github.com/RedMun07/booking_bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+Group=__USER__
+WorkingDirectory=/opt/booking_bot
+EnvironmentFile=/opt/booking_bot/.env
+ExecStart=/opt/booking_bot/.venv/bin/python -u app.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+KillSignal=SIGINT
+
+# минимальная изоляция
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/booking_bot
+
+[Install]
+WantedBy=multi-user.target

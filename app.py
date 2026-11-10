@@ -14,7 +14,6 @@ import os
 import sys
 from datetime import datetime, timedelta
 
-import aiohttp
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -39,6 +38,26 @@ logging.basicConfig(
 log = logging.getLogger("booking_bot")
 
 # ========== КОНФИГУРАЦИЯ ==========
+def _load_env(path: str = ".env") -> None:
+    """Подхватывает переменные из .env рядом с app.py, если файл есть."""
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                os.environ.setdefault(
+                    key.strip(), value.strip().strip('"').strip("'")
+                )
+    except OSError:
+        pass
+
+
+_load_env()
+
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
 if not BOT_TOKEN:
@@ -92,9 +111,8 @@ def get_main_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     else:
         kb = [
             [KeyboardButton(text="📅 Расписание"), KeyboardButton(text="✏️ Записаться")],
-            [KeyboardButton(text="❌ Отмена"), KeyboardButton(text="🐱 Факт о котах"),
-             KeyboardButton(text="🐶 Собака")],
-            [KeyboardButton(text="🏠 Главное меню"), KeyboardButton(text="ℹ️ Помощь")],
+            [KeyboardButton(text="❌ Отмена"), KeyboardButton(text="ℹ️ Помощь")],
+            [KeyboardButton(text="🏠 Главное меню")],
         ]
         if admin and mode == "client":
             kb.append([KeyboardButton(text="🛡️ Перейти в режим админа")])
@@ -157,8 +175,6 @@ async def show_main_menu(message: types.Message, text: str | None = None) -> Non
                 "📅 <b>Расписание</b> – посмотреть свободные слоты на 3 дня\n"
                 "✏️ <b>Записаться</b> – выбрать дату и время\n"
                 "❌ <b>Отмена</b> – отменить запись по коду\n"
-                "🐱 <b>Факт о котах</b> – случайный факт (тест API)\n"
-                "🐶 <b>Собака</b> – случайное фото собаки (тест API)\n"
                 "🏠 <b>Главное меню</b> – вернуться в это меню\n"
                 "ℹ️ <b>Помощь</b> – показать это сообщение"
             )
@@ -179,8 +195,6 @@ async def show_main_menu(message: types.Message, text: str | None = None) -> Non
                 "📅 <b>Расписание</b> – посмотреть свободные слоты на 3 дня\n"
                 "✏️ <b>Записаться</b> – выбрать дату и время\n"
                 "❌ <b>Отмена</b> – отменить запись по коду\n"
-                "🐱 <b>Факт о котах</b> – случайный факт (тест API)\n"
-                "🐶 <b>Собака</b> – случайное фото собаки (тест API)\n"
                 "🏠 <b>Главное меню</b> – вернуться в это меню\n"
                 "ℹ️ <b>Помощь</b> – показать это сообщение\n"
                 "🛡️ <b>Перейти в режим админа</b> – вернуться к админским функциям"
@@ -309,50 +323,6 @@ async def cmd_export(message: types.Message):
         document=BufferedInputFile(data, filename=filename),
         caption="📊 Отчёт по бронированиям",
     )
-
-
-# ==================================================
-#  ВНЕШНИЕ API
-# ==================================================
-@dp.message(Command("catfact"))
-@dp.message(lambda msg: msg.text == "🐱 Факт о котах", StateFilter(None))
-async def cmd_catfact(message: types.Message):
-    await message.answer("🐱 Ищу факт...")
-    try:
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get("https://catfact.ninja/fact") as resp:
-                if resp.status != 200:
-                    await message.answer("😿 Не удалось получить факт. Попробуйте позже.")
-                    return
-                data = await resp.json()
-        fact = data.get("fact") or "Не удалось получить факт :("
-        await message.answer(f"🐱 {esc(fact)}")
-    except Exception as e:
-        log.warning("catfact API error: %s", e)
-        await message.answer("😿 Сервис недоступен, попробуйте позже.")
-
-
-@dp.message(Command("dog"))
-@dp.message(lambda msg: msg.text == "🐶 Собака", StateFilter(None))
-async def cmd_dog(message: types.Message):
-    await message.answer("🐶 Ищу собаку...")
-    try:
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get("https://dog.ceo/api/breeds/image/random") as resp:
-                if resp.status != 200:
-                    await message.answer("😢 Не удалось получить фото. Попробуйте позже.")
-                    return
-                data = await resp.json()
-        image_url = data.get("message")
-        if image_url:
-            await message.answer_photo(photo=image_url, caption="🐶 Вот вам собачка!")
-        else:
-            await message.answer("🐕 Не удалось найти собаку.")
-    except Exception as e:
-        log.warning("dog API error: %s", e)
-        await message.answer("😢 Сервис недоступен, попробуйте позже.")
 
 
 # ====== ЗАПИСЬ ======
@@ -558,3 +528,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
         pass
+

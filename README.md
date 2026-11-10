@@ -8,8 +8,7 @@ Telegram-бот на **aiogram 3**: запись на часовые слоты,
 **Клиент**
 - 📅 расписание свободных слотов на 3 дня;
 - ✏️ запись: дата → время → имя → телефон;
-- 🔑 код отмены (6 символов), ❌ отмена записи по коду;
-- 🐱 случайный факт о котах, 🐶 случайное фото собаки (демо внешних API).
+- 🔑 код отмены (6 символов), ❌ отмена записи по коду.
 
 **Администратор** (`ADMIN_ID`)
 - 📋 занятые слоты за 3 дня с контактами и кодами;
@@ -17,19 +16,23 @@ Telegram-бот на **aiogram 3**: запись на часовые слоты,
 - 👤 переключение в клиентский режим и обратно;
 - 🔔 уведомления о новых записях и отменах.
 
-## Запуск
+## Локальный запуск
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-export BOT_TOKEN="123456:ABC..."  # Windows: set BOT_TOKEN=123456:ABC...
-export ADMIN_ID="123456789"       # Windows: set ADMIN_ID=123456789
+cp .env.example .env             # Windows: copy .env.example .env
+# вписать BOT_TOKEN и ADMIN_ID в .env
+
 python app.py
 ```
 
-Свой Telegram ID можно узнать у бота `@userinfobot` или командой `/id` в этом боте.
+Приложение само читает `.env` из своей папки, поэтому переменные окружения
+выставлять вручную не обязательно.
+
+Свой Telegram ID можно узнать у `@userinfobot` или командой `/id` в этом боте.
 
 Переменные окружения:
 
@@ -39,21 +42,64 @@ python app.py
 | `ADMIN_ID` | нет | Telegram ID администратора; без него админ-функции и уведомления отключены |
 | `DB_PATH` | нет | путь к SQLite-файлу, по умолчанию `studio.db` |
 
+## Деплой на VPS (Ubuntu 22.04/24.04)
+
+```bash
+ssh root@ВАШ_IP
+git clone https://github.com/RedMun07/booking_bot.git /opt/booking_bot
+cd /opt/booking_bot
+bash deploy/deploy.sh
+nano /opt/booking_bot/.env      # вписать BOT_TOKEN и ADMIN_ID
+systemctl restart booking-bot
+```
+
+Скрипт сам: ставит python/venv/sqlite, создаёт окружение, поднимает
+systemd-юнит `booking-bot` с автоперезапуском, включает автозапуск при загрузке.
+
+Полезные команды:
+
+```bash
+systemctl status booking-bot     # состояние
+journalctl -u booking-bot -f     # логи в реальном времени
+systemctl restart booking-bot    # перезапуск
+```
+
+Обновление после `git push`:
+
+```bash
+cd /opt/booking_bot && git pull && systemctl restart booking-bot
+```
+
+## Бэкапы
+
+```bash
+crontab -e
+# каждый день в 04:15
+15 4 * * * /opt/booking_bot/deploy/backup.sh >> /var/log/booking-bot-backup.log 2>&1
+```
+
+Скрипт делает `sqlite3 .backup` (безопасно при работающем боте), сжимает
+и удаляет копии старше 14 дней из `/var/backups/booking_bot`.
+
 ## Тесты
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-Тесты проверяют слой хранения (создание слотов, атомарную запись, отмену,
-уникальность кодов) и не требуют токена и сети.
+Проверяют слой хранения (создание слотов, атомарную запись, отмену,
+уникальность кодов); токен и сеть не нужны.
 
 ## Структура
 
 ```
-app.py              — хендлеры aiogram, клавиатуры, форматирование
-storage.py          — работа с SQLite: слоты, бронирования, отмена
-tests/test_storage.py — тесты слоя хранения
+app.py                    — хендлеры aiogram, клавиатуры, форматирование
+storage.py                — SQLite: слоты, бронирования, отмена
+tests/test_storage.py     — тесты слоя хранения
+deploy/deploy.sh          — установка на сервер
+deploy/booking-bot.service— systemd-юнит (шаблон)
+deploy/backup.sh          — бэкап базы
+.env.example              — шаблон конфигурации
 ```
 
 ## Как это работает
@@ -61,5 +107,5 @@ tests/test_storage.py — тесты слоя хранения
 - Слоты создаются на 3 дня вперёд (09:00–18:00), недостающие досоздаются при старте.
 - Запись атомарна: `UPDATE ... WHERE is_booked = 0`; если слот уже занят,
   пользователь получает сообщение и может выбрать другой.
-- Коды отмены уникальны (проверка через `UNIQUE` + повтор при коллизии).
+- Коды отмены уникальны (`UNIQUE` + повтор при коллизии).
 - Прошедшие свободные слоты удаляются при старте, история записей сохраняется.
